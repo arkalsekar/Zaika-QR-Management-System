@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { LogOut, Plus, Trash2, Edit2, X, RefreshCw } from 'lucide-react';
+import { LogOut, Plus, Trash2, Edit2, X, RefreshCw, QrCode, Search, Save } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
+import Scanner from '../components/Scanner';
 
 export default function AdminDashboard() {
     const navigate = useNavigate();
@@ -30,6 +31,12 @@ export default function AdminDashboard() {
         phone: '',
         email: ''
     });
+
+    // Update Balance State
+    const [balanceSearchId, setBalanceSearchId] = useState('');
+    const [showBalanceScanner, setShowBalanceScanner] = useState(false);
+    const [foundCoupon, setFoundCoupon] = useState(null);
+    const [updatedBalanceValue, setUpdatedBalanceValue] = useState('');
 
     useEffect(() => {
         const admin = localStorage.getItem('admin_user');
@@ -131,6 +138,52 @@ export default function AdminDashboard() {
             fetchCoupons();
         } catch (err) {
             alert('Error creating coupon: ' + err.message);
+        }
+    };
+
+    // Update Balance Logic
+    const handleBalanceScan = (code) => {
+        if (code) {
+            setShowBalanceScanner(false);
+            setBalanceSearchId(code);
+            fetchCouponForUpdate(code);
+        }
+    };
+
+    const fetchCouponForUpdate = async (id) => {
+        if (!id) return;
+        try {
+            const { data, error } = await supabase.from('coupons').select('*').eq('coupon_id', id).single();
+            if (error || !data) throw new Error('Coupon not found');
+            setFoundCoupon(data);
+            setUpdatedBalanceValue(data.balance);
+        } catch (err) {
+            alert(err.message);
+            setFoundCoupon(null);
+        }
+    };
+
+    const updateBalance = async () => {
+        if (!foundCoupon) return;
+        try {
+            // Using upsert to update balance to bypass potential PATCH CORS issues
+            const updatedCoupon = { ...foundCoupon, balance: parseFloat(updatedBalanceValue) };
+
+            // Also update status if balance > 0
+            if (updatedCoupon.balance > 0 && updatedCoupon.status === 'used') {
+                updatedCoupon.status = 'active';
+            }
+
+            const { error } = await supabase.from('coupons').upsert(updatedCoupon);
+
+            if (error) throw error;
+            alert('Balance updated!');
+            setFoundCoupon(null);
+            setBalanceSearchId('');
+            setUpdatedBalanceValue('');
+            fetchCoupons(); // Refresh list
+        } catch (err) {
+            alert('Error updating balance: ' + err.message);
         }
     };
 
@@ -241,6 +294,76 @@ export default function AdminDashboard() {
 
                 {activeTab === 'coupons' && (
                     <div className="animate-fade-in">
+
+                        {/* Update Balance Section */}
+                        <div className="card mb-8 border border-blue-500/30">
+                            <h3 className="text-xl mb-4 text-blue-400">Update Coupon Balance</h3>
+
+                            {!foundCoupon ? (
+                                <div className="flex flex-col gap-4">
+                                    <div className="flex gap-4">
+                                        <input
+                                            placeholder="Enter/Scan Coupon ID"
+                                            value={balanceSearchId}
+                                            onChange={(e) => setBalanceSearchId(e.target.value)}
+                                            style={{ flexGrow: 1 }}
+                                        />
+                                        <button onClick={() => setShowBalanceScanner(true)} style={{ background: 'var(--color-warning)', color: 'black' }}>
+                                            <QrCode size={20} />
+                                        </button>
+                                        <button onClick={() => fetchCouponForUpdate(balanceSearchId)} className="flex-center gap-2">
+                                            <Search size={20} /> Find
+                                        </button>
+                                    </div>
+                                    {showBalanceScanner && (
+                                        <div className="mt-4 relative">
+                                            <Scanner onScan={handleBalanceScan} />
+                                            <button
+                                                onClick={() => setShowBalanceScanner(false)}
+                                                className="absolute top-2 right-2 p-2 bg-black/50 text-white rounded"
+                                            >
+                                                Close
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="bg-slate-800 p-6 rounded-lg border border-white/10">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div>
+                                            <div className="text-sm text-slate-400">Editing Coupon</div>
+                                            <div className="text-2xl font-mono text-white">{foundCoupon.coupon_id}</div>
+                                            <div className="text-sm text-slate-400 mt-1">
+                                                Roll: {foundCoupon.roll_no || 'N/A'} | Status: {foundCoupon.status}
+                                            </div>
+                                        </div>
+                                        <button onClick={() => setFoundCoupon(null)} style={{ background: 'transparent' }}>
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex gap-4 items-end">
+                                        <div className="flex-grow">
+                                            <label className="text-sm text-slate-400 mb-1 block">New Balance (₹)</label>
+                                            <input
+                                                type="number"
+                                                value={updatedBalanceValue}
+                                                onChange={(e) => setUpdatedBalanceValue(e.target.value)}
+                                                className="text-2xl font-bold text-green-400"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={updateBalance}
+                                            className="flex-center gap-2"
+                                            style={{ background: 'var(--color-success)', height: '50px' }}
+                                        >
+                                            <Save size={20} /> Update Balance
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="card mb-8">
                             <h3 className="text-xl mb-4">Issue New Coupon</h3>
                             <form onSubmit={createCoupon} className="grid-cols-2">
