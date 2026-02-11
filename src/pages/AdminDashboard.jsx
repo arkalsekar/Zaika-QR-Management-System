@@ -1,15 +1,25 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { LogOut, Plus, Trash2, Edit2, X, RefreshCw, QrCode, Search, Save } from 'lucide-react';
+import { LogOut, Plus, Trash2, Edit2, X, RefreshCw, QrCode, Search, Save, ChevronDown, Loader } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import Scanner from '../components/Scanner';
+
+// Pagination config
+const COUPONS_PER_PAGE = 20;
 
 export default function AdminDashboard() {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('counters'); // counters | coupons
     const [counters, setCounters] = useState([]);
     const [coupons, setCoupons] = useState([]);
+
+    // Coupon pagination state
+    const [couponOffset, setCouponOffset] = useState(0);
+    const [hasMoreCoupons, setHasMoreCoupons] = useState(true);
+    const [totalCoupons, setTotalCoupons] = useState(0);
+    const [couponsLoading, setCouponsLoading] = useState(false);
+    const [couponsInitialized, setCouponsInitialized] = useState(false);
 
     // Counter Form State
     const [editingCounterId, setEditingCounterId] = useState(null);
@@ -45,17 +55,88 @@ export default function AdminDashboard() {
             return;
         }
         fetchCounters();
-        fetchCoupons();
+        // Don't fetch coupons on initial load - lazy load when tab is selected
     }, [navigate]);
+
+    // Lazy load coupons when tab switches to 'coupons'
+    useEffect(() => {
+        if (activeTab === 'coupons' && !couponsInitialized) {
+            fetchCouponsInitial();
+        }
+    }, [activeTab, couponsInitialized]);
 
     const fetchCounters = async () => {
         const { data } = await supabase.from('counters').select('*').order('created_at', { ascending: false });
         if (data) setCounters(data);
     };
 
-    const fetchCoupons = async () => {
-        const { data } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
-        if (data) setCoupons(data);
+    // Fetch initial batch of coupons with count
+    const fetchCouponsInitial = async () => {
+        setCouponsLoading(true);
+        try {
+            // Get total count
+            const { count } = await supabase
+                .from('coupons')
+                .select('*', { count: 'exact', head: true });
+            
+            setTotalCoupons(count || 0);
+
+            // Fetch first batch
+            const { data, error } = await supabase
+                .from('coupons')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .range(0, COUPONS_PER_PAGE - 1);
+
+            if (error) throw error;
+
+            setCoupons(data || []);
+            setCouponOffset(COUPONS_PER_PAGE);
+            setHasMoreCoupons((data?.length || 0) >= COUPONS_PER_PAGE && (count || 0) > COUPONS_PER_PAGE);
+            setCouponsInitialized(true);
+        } catch (err) {
+            console.error('Error fetching coupons:', err);
+        } finally {
+            setCouponsLoading(false);
+        }
+    };
+
+    // Load more coupons (pagination)
+    const loadMoreCoupons = async () => {
+        if (couponsLoading || !hasMoreCoupons) return;
+        
+        setCouponsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('coupons')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .range(couponOffset, couponOffset + COUPONS_PER_PAGE - 1);
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                setCoupons(prev => [...prev, ...data]);
+                setCouponOffset(prev => prev + COUPONS_PER_PAGE);
+                setHasMoreCoupons(data.length >= COUPONS_PER_PAGE && coupons.length + data.length < totalCoupons);
+            } else {
+                setHasMoreCoupons(false);
+            }
+        } catch (err) {
+            console.error('Error loading more coupons:', err);
+        } finally {
+            setCouponsLoading(false);
+        }
+    };
+
+    // Refresh coupons (reset pagination and reload)
+    const refreshCoupons = () => {
+        setCoupons([]);
+        setCouponOffset(0);
+        setHasMoreCoupons(true);
+        setCouponsInitialized(false);
+        // This will trigger the useEffect to fetch again
+        fetchCouponsInitial();
     };
 
     const handleLogout = () => {
@@ -135,7 +216,7 @@ export default function AdminDashboard() {
             if (error) throw error;
             alert('Coupon created!');
             setNewCoupon({ balance: '', roll_no: '', phone: '', email: '' });
-            fetchCoupons();
+            refreshCoupons(); // Refresh with pagination
         } catch (err) {
             alert('Error creating coupon: ' + err.message);
         }
@@ -181,7 +262,7 @@ export default function AdminDashboard() {
             setFoundCoupon(null);
             setBalanceSearchId('');
             setUpdatedBalanceValue('');
-            fetchCoupons(); // Refresh list
+            refreshCoupons(); // Refresh with pagination
         } catch (err) {
             alert('Error updating balance: ' + err.message);
         }
@@ -191,13 +272,13 @@ export default function AdminDashboard() {
         <div className="min-h-screen">
             <nav className="nav-bar">
                 <div className="logo">Zaika Admin</div>
-                <button onClick={handleLogout} style={{ background: 'transparent', border: '1px solid #334155' }}>
-                    <LogOut size={18} /> Logout
+                <button onClick={handleLogout} className="logout-btn flex-center gap-2" style={{ background: 'transparent', border: '1px solid #334155' }}>
+                    <LogOut size={18} /> <span className="logout-text">Logout</span>
                 </button>
             </nav>
 
             <div className="container">
-                <div className="flex gap-4 mb-8">
+                <div className="flex gap-4 mb-8 admin-tabs">
                     <button
                         onClick={() => setActiveTab('counters')}
                         style={{ opacity: activeTab === 'counters' ? 1 : 0.5 }}
@@ -376,24 +457,83 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="card">
-                            <h3 className="text-xl mb-4">Recent Coupons</h3>
-                            <div className="grid-cols-2">
-                                {coupons.map(c => (
-                                    <div key={c.coupon_id} className="glass p-4 rounded-lg flex justify-between items-center" style={{ padding: '1rem' }}>
-                                        <div>
-                                            <div className="text-sm text-secondary">ID: {c.coupon_id.split('-')[0]}...</div>
-                                            <div className="text-xl">₹{c.balance}</div>
-                                            <div className={`text-sm ${c.status === 'active' ? 'text-green-500' : 'text-red-500'}`} style={{ color: c.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                                {c.status.toUpperCase()}
-                                            </div>
-                                        </div>
-                                        <div className="flex-col flex-center">
-                                            <QRCodeCanvas value={c.coupon_id} size={64} />
-                                            <a href={`mailto:?subject=Your Coupon&body=Here is your coupon code: ${c.coupon_id}`} target="_blank" className="text-xs mt-2 text-center text-blue-400">Email</a>
-                                        </div>
-                                    </div>
-                                ))}
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h3 className="text-xl">Recent Coupons</h3>
+                                    <p className="text-sm" style={{ color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
+                                        Showing {coupons.length} of {totalCoupons} coupons
+                                    </p>
+                                </div>
+                                <button 
+                                    onClick={refreshCoupons} 
+                                    disabled={couponsLoading}
+                                    style={{ background: 'transparent', border: '1px solid #334155', padding: '0.5rem' }}
+                                    title="Refresh"
+                                >
+                                    <RefreshCw size={18} className={couponsLoading ? 'animate-spin' : ''} />
+                                </button>
                             </div>
+
+                            {couponsLoading && coupons.length === 0 ? (
+                                <div className="flex-center" style={{ padding: '3rem', color: 'var(--color-text-secondary)' }}>
+                                    <Loader size={24} className="animate-spin" style={{ marginRight: '0.5rem' }} />
+                                    Loading coupons...
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid-cols-2">
+                                        {coupons.map(c => (
+                                            <div key={c.coupon_id} className="glass p-4 rounded-lg flex justify-between items-center" style={{ padding: '1rem' }}>
+                                                <div>
+                                                    <div className="text-sm text-secondary">ID: {c.coupon_id.split('-')[0]}...</div>
+                                                    <div className="text-xl">₹{c.balance}</div>
+                                                    <div className={`text-sm ${c.status === 'active' ? 'text-green-500' : 'text-red-500'}`} style={{ color: c.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                                        {c.status.toUpperCase()}
+                                                    </div>
+                                                </div>
+                                                <div className="flex-col flex-center">
+                                                    <QRCodeCanvas value={c.coupon_id} size={64} />
+                                                    <a href={`mailto:?subject=Your Coupon&body=Here is your coupon code: ${c.coupon_id}`} target="_blank" className="text-xs mt-2 text-center text-blue-400">Email</a>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Load More Button */}
+                                    {hasMoreCoupons && (
+                                        <div className="flex-center" style={{ marginTop: '1.5rem' }}>
+                                            <button 
+                                                onClick={loadMoreCoupons} 
+                                                disabled={couponsLoading}
+                                                className="flex-center gap-2"
+                                                style={{ 
+                                                    background: 'var(--color-bg-secondary)', 
+                                                    border: '1px solid #334155',
+                                                    padding: '0.75rem 2rem'
+                                                }}
+                                            >
+                                                {couponsLoading ? (
+                                                    <>
+                                                        <Loader size={18} className="animate-spin" />
+                                                        Loading...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <ChevronDown size={18} />
+                                                        Load More ({totalCoupons - coupons.length} remaining)
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {!hasMoreCoupons && coupons.length > 0 && (
+                                        <div className="text-center text-sm" style={{ marginTop: '1.5rem', color: 'var(--color-text-secondary)' }}>
+                                            All {totalCoupons} coupons loaded
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
                 )}

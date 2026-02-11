@@ -163,16 +163,16 @@ export default function CounterDashboard() {
     return (
         <div className="min-h-screen flex flex-col" style={{ background: 'var(--color-bg-primary)' }}>
             <nav className="nav-bar">
-                <div>
+                <div className="counter-nav-info">
                     <div className="logo" style={{ fontSize: '1.2rem', padding: 0 }}>{counter.counter_name}</div>
                     <div className="text-sm">Coord: {counter.counter_coordinator_name}</div>
                 </div>
-                <button onClick={handleLogout} style={{ background: 'transparent', border: '1px solid #334155' }}>
+                <button onClick={handleLogout} className="logout-btn" style={{ background: 'transparent', border: '1px solid #334155' }}>
                     <LogOut size={18} />
                 </button>
             </nav>
 
-            <div className="container flex-col flex-center flex-grow" style={{ gap: '1.5rem', justifyContent: 'flex-start', marginTop: '2rem' }}>
+            <div className="container flex-col flex-center flex-grow counter-main" style={{ gap: '1.5rem', justifyContent: 'flex-start', marginTop: '2rem' }}>
 
                 {/* Amount Selection */}
                 <div className="card w-full max-w-md">
@@ -260,12 +260,12 @@ export default function CounterDashboard() {
 
                 {/* Success Prompt Overlay */}
                 {lastSuccess && (
-                    <div style={{
+                    <div className="success-overlay animate-fade-in" style={{
                         position: 'fixed', inset: 0, zIndex: 1000,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)'
-                    }} className="animate-fade-in">
-                        <div className="card" style={{ width: '100%', maxWidth: '350px', textAlign: 'center', border: '1px solid var(--color-success)' }}>
+                    }}>
+                        <div className="card success-card" style={{ textAlign: 'center', border: '1px solid var(--color-success)' }}>
                             <div style={{ color: 'var(--color-success)', marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
                                 <CheckCircle size={64} />
                             </div>
