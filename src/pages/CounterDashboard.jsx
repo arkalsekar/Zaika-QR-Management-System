@@ -42,7 +42,7 @@ export default function CounterDashboard() {
         if (code) {
             setManualCouponId(code);
             setShowScanner(false);
-            setMessage('QR Code scanned! verifying ID...');
+            setMessage('QR Code scanned !');
         }
     };
 
